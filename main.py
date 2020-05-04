@@ -1,10 +1,29 @@
 import time
 import requests
 import json
+import re
 from bs4 import BeautifulSoup
+import os
+import urllib.request
 
 MAX_PUSH = 50
 
+def parse(dom):
+    soup = BeautifulSoup(dom, 'html.parser')
+    links = soup.find(id='main-content').find_all('a')
+    img_urls = []
+    for link in links:
+        if re.match(r'^https?://(i.)?(m.)?imgur.com', link['href']):
+            img_urls.append(link['href'])
+    return img_urls
+
+def get_web_content(url):
+    resp = requests.get(url=url, cookies={'over18': '1'})
+    if resp.status_code != 200:
+        print('Invalid url: ' + resp.url)
+        return None
+    else:
+        return resp.text
 
 def get_resource(url):
     """ 這個函式負責送出HTTP請求，並可使用自訂標頭、內容的分級的Cookie以及傳遞URL網址的參數
@@ -98,7 +117,7 @@ def web_scraping_bot(url):
         while current_articles :
             articles += current_articles
             print("等待2秒鐘..")
-            time.sleep(2)
+            # time.sleep(2)
             # 剖析上一頁繼續尋找是否有今日的文章
             soup = parse_html(get_resource( URL + prev_url) )
             current_articles, prev_url = get_articles(soup, today)
@@ -149,11 +168,30 @@ def printTop3( list_) :
         print("!!!本日" + TOPIC + "版發布的新貼文還未超過3篇哦!!!")
 
 
+def save(img_urls, title):
+    if img_urls:
+        try:
+            folder_name = title.strip()
+            os.makedirs(folder_name)
+            for img_url in img_urls:
+                # e.g. 'http://imgur.com/9487qqq.jpg'.split('//') -> ['http:', 'imgur.com/9487qqq.jpg']
+                if img_url.split('//')[1].startswith('m.'):
+                    img_url = img_url.replace('//m.', '//i.')
+                if not img_url.split('//')[1].startswith('i.'):
+                    img_url = img_url.split('//')[0] + '//i.' + img_url.split('//')[1]
+                if not img_url.endswith('.jpg'):
+                    img_url += '.jpg'
+                file_name = img_url.split('/')[-1]
+                urllib.request.urlretrieve(img_url, os.path.join(folder_name, file_name))
+        except Exception as e:
+            print(e)
 
 
-TOPIC = "Gossiping"
+TOPIC = "Beauty"
 URL = "https://www.ptt.cc"
 url = URL + "/bbs/" + TOPIC + "/index.html"
+
+
 
 if __name__ == '__main__':
     today = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
@@ -177,6 +215,15 @@ if __name__ == '__main__':
     print('\t\t\t'+ TOPIC + '版本日共有' + str(total) + '篇新文章')
     print('=======================TOP3=======================')
     printTop3(SortedData)
+
+    for article in articles:
+        print('Collecting beauty from:', article)
+        page = get_web_content( URL + article['href'])
+        if page:
+            img_urls = parse(page)
+            save(img_urls, article['title'])
+            article['num_image'] = len(img_urls)
+
 
 
 
